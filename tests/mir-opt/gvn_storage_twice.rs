@@ -13,17 +13,22 @@ use std::intrinsics::mir::*;
 // doesn't have valid storage when it is used.
 //
 // Based on `gvn_repeat.rs::repeat_local`, were GVN should replace
-// `let RET = *_5;` with `let RET = _3;`.
+// `let RET = _5;` with `let RET = _3;`.
 
 #[custom_mir(dialect = "runtime")]
-pub fn repeat_local(_1: usize, _2: usize, _3: i32) -> i32 {
+pub fn repeat_local(_1: usize, _2: &mut i32) -> i32 {
     // CHECK-LABEL: fn repeat_local(
     mir! {
         {
+            // CHECK: StorageLive(_3);
+            StorageLive(_3);
+            let _3 = *_2;
             let _4 = [_3; 5];
-            let _5 = &_4[_1];
+            let _5 = _4[_1];
             // CHECK: _0 = copy _3;
-            RET = *_5;
+            RET = _5;
+            // CHECK: StorageDead(_3);
+            StorageDead(_3);
             Return()
         }
     }
@@ -32,16 +37,19 @@ pub fn repeat_local(_1: usize, _2: usize, _3: i32) -> i32 {
 // Since _3 is dead when we access _5, GVN should remove the storage statements.
 
 #[custom_mir(dialect = "runtime")]
-pub fn repeat_local_dead(_1: usize, _2: usize, _3: i32) -> i32 {
+pub fn repeat_local_dead(_1: usize, _2: &mut i32) -> i32 {
     // CHECK-LABEL: fn repeat_local_dead(
     mir! {
         {
+            // CHECK-NOT: StorageLive(_3);
+            StorageLive(_3);
+            let _3 = *_2;
             let _4 = [_3; 5];
-            let _5 = &_4[_1];
+            let _5 = _4[_1];
             // CHECK-NOT: StorageDead(_3);
             StorageDead(_3);
             // CHECK: _0 = copy _3;
-            RET = *_5;
+            RET = _5;
             Return()
         }
     }
@@ -50,24 +58,23 @@ pub fn repeat_local_dead(_1: usize, _2: usize, _3: i32) -> i32 {
 // Since _3 is uninit due to storage when we access _5, GVN should remove the storage statements.
 
 #[custom_mir(dialect = "runtime")]
-pub fn repeat_local_dead_live(_1: usize, _2: usize, _3: i32) -> i32 {
+pub fn repeat_local_dead_live(_1: usize, _2: &mut i32) -> i32 {
     // CHECK-LABEL: fn repeat_local_dead_live(
     mir! {
         {
+            // CHECK-NOT: StorageLive(_3);
+            StorageLive(_3);
+            let _3 = *_2;
             let _4 = [_3; 5];
-            let _5 = &_4[_1];
+            let _5 = _4[_1];
             // CHECK-NOT: StorageLive(_3);
             // CHECK-NOT: StorageDead(_3);
             StorageDead(_3);
             StorageLive(_3);
             // CHECK: _0 = copy _3;
-            RET = *_5;
+            RET = _5;
             Return()
         }
     }
 }
 
-#[inline(never)]
-fn opaque<T>(a: T) -> T {
-    a
-}
